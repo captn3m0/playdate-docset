@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # Keep the GitHub Actions used by the build/auto-merge workflows up to date.
+  # These PRs are auto-merged by .github/workflows/auto-merge-dependabot.yml.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

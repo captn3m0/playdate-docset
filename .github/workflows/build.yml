@@ -1,0 +1,129 @@
+name: Build docset
+
+on:
+  schedule:
+    # Daily at 06:00 UTC.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+# Needed to push version.txt and to create/update the release.
+permissions:
+  contents: write
+
+# Never let two builds race on the release / version.txt commit.
+concurrency:
+  group: build-docset
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Credentials are reused below to commit version.txt back.
+          persist-credentials: true
+
+      - name: Detect upstream SDK version
+        id: version
+        run: |
+          set -euo pipefail
+          location=$(curl -fsSI https://sdk.play.date/inside-playdate \
+            | tr -d '\r' | awk 'tolower($1) == "location:" { print $2 }')
+          version=$(printf '%s' "$location" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+          if [ -z "$version" ]; then
+            echo "::error::Could not detect upstream SDK version (location: '$location')"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Detected upstream Playdate SDK version: $version"
+
+      - name: Ensure pdo_sqlite is available
+        run: |
+          set -euo pipefail
+          if ! php -d extension=pdo_sqlite -r 'exit(extension_loaded("pdo_sqlite") ? 0 : 1);'; then
+            sudo apt-get update
+            sudo apt-get install -y "php$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')-sqlite3"
+          fi
+
+      - name: Install builder
+        run: composer install --ignore-platform-reqs --no-interaction --no-progress
+
+      - name: Download Playdate docs
+        run: |
+          set -euo pipefail
+          mkdir -p html
+          cd html
+          # -H spans hosts to pull the static-cdn.play.date assets; some page
+          # requisites 404, so wget's non-zero exit is tolerated and the
+          # essential files are verified afterwards instead.
+          # --trust-server-names follows the /inside-playdate redirect and saves
+          # the content at its versioned path (sdk.play.date/<version>/...),
+          # which is what the docset builder and version detection expect.
+          wget --trust-server-names -k -np -p -H --adjust-extension https://sdk.play.date/inside-playdate || true
+          wget --trust-server-names -k -np -p -H --adjust-extension https://sdk.play.date/inside-playdate-with-c || true
+          wget -k -np -p -H --adjust-extension https://help.play.date/developer/designing-for-playdate/ || true
+          wget -k -np -p -H --adjust-extension https://play.date/dev/ || true
+
+      - name: Verify downloaded docs
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in \
+            "html/sdk.play.date/${VERSION}/Inside Playdate.html" \
+            "html/sdk.play.date/${VERSION}/Inside Playdate with C.html" \
+            "html/help.play.date/developer/designing-for-playdate/index.html" \
+            "html/play.date/dev/index.html"; do
+            if [ ! -s "$f" ]; then
+              echo "::error::Missing expected doc file: $f"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+
+      - name: Build docset
+        run: composer build
+
+      - name: Update version.txt
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$VERSION" > version.txt
+          if git diff --quiet -- version.txt; then
+            echo "version.txt already at $VERSION"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add version.txt
+          git commit -m "Update to Playdate SDK $VERSION"
+          git push
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Guard against publishing a broken/empty docset (the current build
+          # is ~8 MB); bail if the archive is implausibly small.
+          size=$(stat -c%s storage/Playdate/Playdate.tgz)
+          if [ "$size" -lt 1000000 ]; then
+            echo "::error::Docset archive is suspiciously small ($size bytes); refusing to publish."
+            exit 1
+          fi
+          # The build already produces storage/Playdate/Playdate.tgz (containing
+          # Playdate.docset); copy it to the repo root as the stable release
+          # asset so releases/latest/download/Playdate.tgz is a permanent link.
+          cp storage/Playdate/Playdate.tgz Playdate.tgz
+          notes="Playdate SDK \`$VERSION\` docset, built from the official documentation at https://sdk.play.date/."
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION exists; re-uploading asset."
+            gh release upload "$VERSION" Playdate.tgz --clobber
+          else
+            gh release create "$VERSION" Playdate.tgz --title "$VERSION" --notes "$notes"
+          fi
