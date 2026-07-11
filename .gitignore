@@ -1,0 +1,14 @@
+# Composer dependencies (reinstall with `composer install --ignore-platform-reqs`)
+/vendor/
+
+# Builder working directory and generated docset
+/storage/
+
+# Downloaded source docs (re-fetch with the wget commands in README.md)
+/html/
+
+# Build output copied to the project root
+/Playdate.docset/
+/Playdate.tgz
+
+.DS_Store

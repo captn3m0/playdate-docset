@@ -1,0 +1,22 @@
+name: Dependabot auto-merge
+on: pull_request
+
+# Based on https://docs.github.com/en/code-security/dependabot/working-with-dependabot/automating-dependabot-with-github-actions#enable-auto-merge-on-a-pull-request
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot:
+    runs-on: ubuntu-latest
+    # Check the PR author rather than github.actor, which is spoofable.
+    if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
+    steps:
+      # We only let Dependabot open GitHub Actions updates (see dependabot.yml),
+      # which are pinned to commit SHAs and trusted, so every such PR is
+      # auto-merged once its checks pass.
+      - name: Enable auto-merge for Dependabot PRs
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --rebase "$PR_URL"
