@@ -15,6 +15,8 @@ every day, tracks the upstream SDK version (recorded in
 [`version.txt`](version.txt) and shown by the badge above), and publishes a
 release tagged with that version.
 
+I found out after building this that the SDK comes with a Docset, but it isn't as good.
+
 ## Download
 
 Grab the latest build from the
