@@ -61,10 +61,11 @@ jobs:
           # --trust-server-names follows the /inside-playdate redirect and saves
           # the content at its versioned path (sdk.play.date/<version>/...),
           # which is what the docset builder and version detection expect.
-          wget --trust-server-names -k -np -p -H --adjust-extension https://sdk.play.date/inside-playdate || true
-          wget --trust-server-names -k -np -p -H --adjust-extension https://sdk.play.date/inside-playdate-with-c || true
-          wget -k -np -p -H --adjust-extension https://help.play.date/developer/designing-for-playdate/ || true
-          wget -k -np -p -H --adjust-extension https://play.date/dev/ || true
+          retry=(--tries=5 --waitretry=10 --retry-on-http-error=500,502,503,504,520,522,524)
+          wget "${retry[@]}" --trust-server-names -k -np -p -H --adjust-extension https://sdk.play.date/inside-playdate || true
+          wget "${retry[@]}" --trust-server-names -k -np -p -H --adjust-extension https://sdk.play.date/inside-playdate-with-c || true
+          wget "${retry[@]}" -k -np -p -H --adjust-extension https://help.play.date/developer/designing-for-playdate/ || true
+          wget "${retry[@]}" -k -np -p -H --adjust-extension https://play.date/dev/ || true
 
       - name: Verify downloaded docs
         env:
